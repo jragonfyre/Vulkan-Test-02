@@ -400,6 +400,7 @@ private:
 		// finally retrieve the queue handles (the queues are created with the device)
 		// 0 is the index of the queue in the family, since we're only creating one.
 		vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
+		vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
 	}
 
 	void mainLoop() {
