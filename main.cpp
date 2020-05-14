@@ -149,6 +149,9 @@ private:
 	// image views
 	std::vector<VkImageView> swapChainImageViews;
 	
+	// pipeline stuff
+	VkPipelineLayout pipelineLayout;
+
 
 	// member functions
 	void initWindow() {
@@ -645,6 +648,137 @@ private:
 
 		VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
 
+		// hard coding vertex data into shader, no vertex data to load for now
+		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+		vertexInputInfo.vertexBindingDescriptionCount = 0;
+		vertexInputInfo.pVertexBindingDescriptions = nullptr;
+		vertexInputInfo.vertexAttributeDescriptionCount = 0;
+		vertexInputInfo.pVertexAttributeDescriptions = nullptr;
+
+		// input assembly describes topology info
+		// point list, line list, line strip, triangle list, triangle strip etc
+		// primitive restart enable allows reseting a strip topology in the middle with indices 0xFFFF or 0xFFFFFFFF
+		VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+		inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+		inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+		inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+		// set up viewport (region of framebuffer to output to)
+		// usually (0,0) to (width,height)
+		// viewport is transformation from image to framebuffer, so changing this would rescale, not clip
+		VkViewport viewport{};
+		viewport.x = 0.0f;
+		viewport.y = 0.0f;
+		viewport.width = (float)swapChainExtent.width;
+		viewport.height = (float)swapChainExtent.height;
+		viewport.minDepth = 0.0f;
+		viewport.maxDepth = 1.0f;
+
+		// scissors clip where we draw
+		// want to draw to the whole framebuffer, so:
+		VkRect2D scissor{};
+		scissor.offset = { 0,0 };
+		scissor.extent = swapChainExtent;
+
+		VkPipelineViewportStateCreateInfo viewportState{};
+		viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+		viewportState.viewportCount = 1; // more than one needs a GPU feature
+		viewportState.pViewports = &viewport;
+		viewportState.scissorCount = 1;
+		viewportState.pScissors = &scissor;
+
+		// rasterizer configuration
+		VkPipelineRasterizationStateCreateInfo rasterizer{};
+		rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+		rasterizer.depthClampEnable = VK_FALSE; // discard fragments that are too far away
+		// setting to true requires a GPU feature, and can be useful for things like shadow maps
+		rasterizer.rasterizerDiscardEnable = VK_FALSE; // if true, geometry never passes through rasterizer
+		// no framebuffer output
+		// polygonMode options: FILL, LINE, POINT doing the expected, anything other than fill needs a 
+		// GPU feature
+		rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+		rasterizer.lineWidth = 1.0f; // anything wider than 1.0f requires wideLines GPU feature
+		rasterizer.cullMode = VK_CULL_MODE_BACK_BIT; // cull back faces
+		rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE; // front faces are clockwise
+		rasterizer.depthBiasEnable = VK_FALSE; // sometimes used for shadow mapping (bias based on slope)
+		// optional:
+		rasterizer.depthBiasConstantFactor = 0.0f;
+		rasterizer.depthBiasClamp = 0.0f;
+		rasterizer.depthBiasSlopeFactor = 0.0f;
+
+		// multisampling seems very useful, but disable for now
+		VkPipelineMultisampleStateCreateInfo multisampling{};
+		multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+		multisampling.sampleShadingEnable = VK_FALSE;
+		multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+		multisampling.minSampleShading = 1.0f; // optional
+		multisampling.pSampleMask = nullptr; // optional
+		multisampling.alphaToCoverageEnable = VK_FALSE; // optional
+		multisampling.alphaToOneEnable = VK_FALSE; // optional
+
+		// no depthstencilstate createinfo struct, we'll just pass a nullptr
+
+		// color blending
+		// two structs, the first is per framebuffer
+		// the second is global color blending settings
+		VkPipelineColorBlendAttachmentState colorBlendAttachment{}; 
+		colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT
+			| VK_COLOR_COMPONENT_G_BIT
+			| VK_COLOR_COMPONENT_B_BIT
+			| VK_COLOR_COMPONENT_A_BIT;
+		colorBlendAttachment.blendEnable = VK_FALSE;
+		colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE; // optional
+		colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO; // optional
+		colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD; // optional
+		colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE; // optional
+		colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE; // optional
+		colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD; // optional
+		// the ops do somthing like
+		/*
+		if(blendEnable) {
+			finalColor.rgb = (srcColorBlendFactor * newColor.rgb) <colorBlendOp> 
+				(dstColorBlendFactor * oldColor.rgb);
+			// same for alpha
+		} else {
+			finalColor = newColor;
+		}
+		finalColor = finalColor & colorWriteMask;
+		*/
+
+		// second blending structure
+		VkPipelineColorBlendStateCreateInfo colorBlending{};
+		colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+		colorBlending.logicOpEnable = VK_FALSE; 
+		colorBlending.logicOp = VK_LOGIC_OP_COPY; // optional
+		colorBlending.attachmentCount = 1; // one attachment for one framebuffer
+		colorBlending.pAttachments = &colorBlendAttachment; // the attachement
+		colorBlending.blendConstants[0] = 0.0f; //optional
+		colorBlending.blendConstants[1] = 0.0f; //optional
+		colorBlending.blendConstants[2] = 0.0f; //optional
+		colorBlending.blendConstants[3] = 0.0f; //optional
+		// logic ops being set to true would disable all alpha blending for all framebuffers, colorWriteMask still used
+		// we've disabled both modes so that colors just go through unmodified
+
+		// if you want to allow dynamic state, ten you would have to create a VkDynamicState struct, 
+		// which would cause the values to be ignored.
+		// I'll use a nullptr right now.
+		// things that can be made dynamic: Viewport, line_width, blend_constants
+
+
+		// Pipeline layout (uniform setup)
+		VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+		pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+		pipelineLayoutInfo.setLayoutCount = 0; // optional
+		pipelineLayoutInfo.pSetLayouts = nullptr; // optional
+		pipelineLayoutInfo.pushConstantRangeCount = 0; // optional
+		pipelineLayoutInfo.pPushConstantRanges = nullptr; // optional
+
+		if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create pipeline layout!");
+		}
+
+
 		// destroy the shader modules 
 		vkDestroyShaderModule(device, fragShaderModule, nullptr);
 		vkDestroyShaderModule(device, vertShaderModule, nullptr);
@@ -671,6 +805,8 @@ private:
 		}
 	}
 	void cleanup() {
+		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+
 		for (auto imageView : swapChainImageViews) {
 			vkDestroyImageView(device, imageView, nullptr);
 		}
