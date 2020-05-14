@@ -13,6 +13,8 @@
 #include <cstring>
 #include <cstdint>
 #include <algorithm>
+#include <fstream>
+
 
 const constexpr uint32_t WIDTH = 800;
 const constexpr uint32_t HEIGHT = 600;
@@ -86,8 +88,6 @@ struct SwapChainSupportDetails {
 	std::vector<VkSurfaceFormatKHR> formats;
 	std::vector<VkPresentModeKHR> presentModes;
 };
-
-
 
 
 
@@ -623,7 +623,45 @@ private:
 	}
 
 	void createGraphicsPipeline() {
+		auto vertShaderCode = readFile("shaders/vert.spv");
+		auto fragShaderCode = readFile("shaders/frag.spv");
 
+		// shader modules are compiled and linked when the pipeline is created, so we can destroy them after that
+		VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
+		VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
+
+		VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+		vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT; // vertex shader stage
+		vertShaderStageInfo.module = vertShaderModule;
+		vertShaderStageInfo.pName = "main"; // entry point
+		// not usng pSpecializationInfo, but you can pass in compile time constants, and compiler can optimize 
+		// with these values, we're setting it to nullptr
+		VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+		fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT; // vertex shader stage
+		fragShaderStageInfo.module = fragShaderModule;
+		fragShaderStageInfo.pName = "main"; // entry point
+
+		VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+
+		// destroy the shader modules 
+		vkDestroyShaderModule(device, fragShaderModule, nullptr);
+		vkDestroyShaderModule(device, vertShaderModule, nullptr);
+	}
+
+	VkShaderModule createShaderModule(const std::vector<char>& code) {
+		VkShaderModuleCreateInfo createInfo{};
+		createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+		createInfo.codeSize = code.size();
+		createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data()); // needs to satisfy the alignment 
+		// requirements, but vectors already ensure that
+
+		VkShaderModule module;
+		if (vkCreateShaderModule(device, &createInfo, nullptr, &module) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create shader module!");
+		}
+		return module;
 	}
 
 	void mainLoop() {
@@ -671,6 +709,23 @@ private:
 		std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
 
 		return VK_FALSE;
+	}
+
+	static std::vector<char> readFile(const std::string& filename) {
+		std::ifstream file(filename, std::ios::ate | std::ios::binary); // ate - start at end, binary - binary file
+
+		if (!file.is_open()) {
+			throw std::runtime_error("failed to open file!");
+		}
+
+		size_t fileSize = (size_t) file.tellg();
+		std::vector<char> buffer(fileSize);
+
+		file.seekg(0); // back to beginning
+		file.read(buffer.data(), fileSize); // read entire file in
+		file.close(); // close file
+
+		return buffer;
 	}
 };
 
