@@ -18,6 +18,7 @@
 
 const constexpr uint32_t WIDTH = 800;
 const constexpr uint32_t HEIGHT = 600;
+const constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 
 const std::vector<const char*> validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
@@ -162,6 +163,14 @@ private:
 	VkCommandPool commandPool;
 	std::vector<VkCommandBuffer> commandBuffers;
 
+	// drawing stuff
+	std::vector<VkSemaphore> imageAvailableSemaphores;
+	std::vector<VkSemaphore> renderFinishedSemaphores;
+	std::vector<VkFence> inFlightFences;
+	std::vector<VkFence> imagesInFlight;
+	size_t currentFrame = 0;
+
+
 	// member functions
 	void initWindow() {
 		glfwInit();
@@ -184,6 +193,7 @@ private:
 		createFramebuffers();
 		createCommandPool();
 		createCommandBuffers();
+		createSyncObjects();
 	}
 	void createInstance() {
 		// do a preliminary check for validation layers
@@ -676,12 +686,29 @@ private:
 		// pDepthStencilAttachment
 		// pPreserveAttachments (not used by subpass, but data must be preserved)
 
+		// subpass dependencies
+		VkSubpassDependency dependency{};
+		dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+		dependency.dstSubpass = 0;
+		// VK_SUBPASS_EXTERNAL means implicit subpass before/after render pass 
+		// depending on whether it's in source or dest
+		// index 0 refers to our subpass, dst must be > src to prevent cycles in the graph
+		dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT; // ops to wait on 
+		dependency.srcAccessMask = 0; 
+
+		dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+
 		VkRenderPassCreateInfo renderPassInfo{};
 		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
 		renderPassInfo.attachmentCount = 1;
 		renderPassInfo.pAttachments = &colorAttachment;
 		renderPassInfo.subpassCount = 1;
 		renderPassInfo.pSubpasses = &subpass;
+		// subpass dependencies
+		renderPassInfo.dependencyCount = 1;
+		renderPassInfo.pDependencies = &dependency;
 
 		if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create render pass!");
@@ -1007,13 +1034,121 @@ private:
 		}
 	}
 
+	void createSyncObjects() {
+		// semaphores for GPU-GPU sync
+		// fences for CPU-GPU sync
+		imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+		renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+		inFlightFences.resize(MAX_FRAMES_IN_FLIGHT); 
+		imagesInFlight.resize(swapChainImages.size(), VK_NULL_HANDLE); // initialize to no fence to start with
+
+		VkSemaphoreCreateInfo semaphoreInfo{};
+		semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+		// no other required fields right now
+
+		VkFenceCreateInfo fenceInfo{};
+		fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+		fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // create fences signaled for first frames
+
+		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+			if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS
+				|| vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS
+				|| vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS
+				) {
+				throw std::runtime_error("failed to create semaphores for a frame!");
+			}
+		}
+	}
+
 	void mainLoop() {
 		// check for events until the window should close
 		while (!glfwWindowShouldClose(window)) {
 			glfwPollEvents();
+			drawFrame();
 		}
+
+		vkDeviceWaitIdle(device);
 	}
+
+	void drawFrame() {
+		// wait for fence for current frame
+		// waits on an array of fences, true means wait for all of them
+		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+		
+		uint32_t imageIndex;
+		// params: 
+		// logical device, swapchain we want image from
+		// timeout in nanoseconds, UINT64_MAX disables timeout
+		// synchronization objects Semaphore, Fence, or both, once signaled, we can draw
+		// last one is index of image that will be available
+		vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], 
+			VK_NULL_HANDLE, &imageIndex);
+
+		// wait until this image is free, (i.e., not being used by a previous frame)
+		if (imagesInFlight[imageIndex] != VK_NULL_HANDLE) {
+			vkWaitForFences(device, 1, &imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
+		}
+		// mark image as being in use by a frame
+		imagesInFlight[imageIndex] = inFlightFences[currentFrame];
+
+		VkSubmitInfo submitInfo{};
+		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };
+		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+		submitInfo.waitSemaphoreCount = 1;
+		submitInfo.pWaitSemaphores = waitSemaphores;
+		submitInfo.pWaitDstStageMask = waitStages;
+		// which semaphores to wait on, and in which stages of the pipeline to wait
+		// we want to wait on writing colors until image is available.
+		// wait stages <-> wait semaphores
+		
+		submitInfo.commandBufferCount = 1;
+		submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
+
+		VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };
+		submitInfo.signalSemaphoreCount = 1;
+		submitInfo.pSignalSemaphores = signalSemaphores; // which semaphores to signal once 
+		// command buffers have finished execution
+
+		vkResetFences(device, 1, &inFlightFences[currentFrame]); // reset the fence for this frame
+
+		// Queue submit takes an array of submit info structures 
+		// last parameter is an optional fence signaled when the command buffers finish execution
+		if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
+			throw std::runtime_error("failed to submit draw command buffer!");
+		}
+
+		// Now just need to present the frame to screen!
+
+		VkPresentInfoKHR presentInfo{}; // info to configure the presentation
+		presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+
+		presentInfo.waitSemaphoreCount = 1;
+		presentInfo.pWaitSemaphores = signalSemaphores; // render finished semaphore
+		// the semaphore to wait on
+		VkSwapchainKHR swapChains[] = { swapChain };
+		presentInfo.swapchainCount = 1;
+		presentInfo.pSwapchains = swapChains;
+		presentInfo.pImageIndices = &imageIndex; 
+		// params specify swap chains to present images to and the index of the image for each swap chain
+		// almost always a single one
+		presentInfo.pResults = nullptr; // optional
+		// array of VkResult values to check if each presentation was successful
+		// only necessary if you have more than one swap chain, since we can just use the return value 
+		// of:
+		vkQueuePresentKHR(presentQueue, &presentInfo);
+		// error handling to come later
+
+		currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+	}
+
 	void cleanup() {
+		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+			vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
+			vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
+			vkDestroyFence(device, inFlightFences[i], nullptr);
+		}
+
 		vkDestroyCommandPool(device, commandPool, nullptr);
 
 		for (auto framebuffer : swapChainFramebuffers) {
