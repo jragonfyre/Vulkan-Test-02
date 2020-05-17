@@ -170,16 +170,26 @@ private:
 	std::vector<VkFence> imagesInFlight;
 	size_t currentFrame = 0;
 
+	bool framebufferResized = false;
+
 
 	// member functions
 	void initWindow() {
 		glfwInit();
 
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-		glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+		//glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE); now we're handling resizes properly
 
 		window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+		glfwSetWindowUserPointer(window, this); // give window a pointer to this
+		glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
 	}
+
+	static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
+		auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+		app->framebufferResized = true;
+	}
+
 	void initVulkan() {
 		createInstance();
 		setupDebugMessenger();
@@ -493,7 +503,13 @@ private:
 			return capabilities.currentExtent; // modification not allowed
 		}
 		else {
-			VkExtent2D actualExtent = { WIDTH, HEIGHT };
+			int width, height;
+			glfwGetFramebufferSize(window, &width, &height);
+
+			VkExtent2D actualExtent = { 
+				static_cast<uint32_t>(width), 
+				static_cast<uint32_t>(height) 
+			};
 
 			actualExtent.width = std::max(capabilities.minImageExtent.width,
 				std::min(capabilities.maxImageExtent.width, actualExtent.width));
@@ -1081,8 +1097,17 @@ private:
 		// timeout in nanoseconds, UINT64_MAX disables timeout
 		// synchronization objects Semaphore, Fence, or both, once signaled, we can draw
 		// last one is index of image that will be available
-		vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], 
+		VkResult result = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], 
 			VK_NULL_HANDLE, &imageIndex);
+		if (result == VK_ERROR_OUT_OF_DATE_KHR) // swap chain out of date, recreate
+		{
+			recreateSwapChain();
+			return;
+		}
+		else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) { // suboptimal means swap chain 
+			// not great, but will still work (it is a "success" code)
+			throw std::runtime_error("failed to acquire swap chain image"); 
+		}
 
 		// wait until this image is free, (i.e., not being used by a previous frame)
 		if (imagesInFlight[imageIndex] != VK_NULL_HANDLE) {
@@ -1136,24 +1161,55 @@ private:
 		// array of VkResult values to check if each presentation was successful
 		// only necessary if you have more than one swap chain, since we can just use the return value 
 		// of:
-		vkQueuePresentKHR(presentQueue, &presentInfo);
+		result = vkQueuePresentKHR(presentQueue, &presentInfo);
 		// error handling to come later
+
+		if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized) {
+			framebufferResized = false; // need to resize after vkQueuePresentKHR to ensure
+			// that semaphores are in a consistent state. Otherwise a signalled semaphore may never
+			// be properly waited upon
+			recreateSwapChain(); // recreate if suboptimal this time, since we've already presented the frame
+		}
+		else if (result != VK_SUCCESS) {
+			throw std::runtime_error("failed to present swap chain image!");
+		}
 
 		currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 	}
 
-	void cleanup() {
-		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-			vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
-			vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
-			vkDestroyFence(device, inFlightFences[i], nullptr);
+	// note that command pools only depend on the logical device, not the swap chain.
+	void createSwapChainAndFollowing() {
+		createSwapChain();
+		createImageViews();
+		createRenderPass();
+		createGraphicsPipeline();
+		createFramebuffers();
+		createCommandBuffers();
+	}
+
+	void recreateSwapChain() {
+		int width = 0, height = 0;
+		glfwGetFramebufferSize(window, &width, &height);
+		while (width == 0 || height == 0) {
+			// minimized
+			glfwGetFramebufferSize(window, &width, &height);
+			glfwWaitEvents();
 		}
 
-		vkDestroyCommandPool(device, commandPool, nullptr);
+		vkDeviceWaitIdle(device);
+
+		cleanupSwapChain();
+		createSwapChainAndFollowing();
+	}
+
+	void cleanupSwapChain() {
 
 		for (auto framebuffer : swapChainFramebuffers) {
 			vkDestroyFramebuffer(device, framebuffer, nullptr);
 		}
+
+		// frees command buffers without recreating the command pool
+		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
 
 		vkDestroyPipeline(device, graphicsPipeline, nullptr);
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
@@ -1164,6 +1220,18 @@ private:
 		}
 
 		vkDestroySwapchainKHR(device, swapChain, nullptr);
+	}
+
+	void cleanup() {
+		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+			vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
+			vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
+			vkDestroyFence(device, inFlightFences[i], nullptr);
+		}
+
+		cleanupSwapChain();
+
+		vkDestroyCommandPool(device, commandPool, nullptr);
 
 		vkDestroyDevice(device, nullptr); // destroy the logical device
 
