@@ -14,6 +14,8 @@
 #include <cstdint>
 #include <algorithm>
 #include <fstream>
+#include <glm/glm.hpp>
+#include <array>
 
 
 const constexpr uint32_t WIDTH = 800;
@@ -119,6 +121,49 @@ void DestroyDebugUtilsMessengerEXT(VkInstance instance,
 		std::cerr << "failed to load destory debug utils messenger function" << std::endl;
 	}
 }
+
+
+struct Vertex {
+	glm::vec2 pos;
+	glm::vec3 color;
+
+	static VkVertexInputBindingDescription getBindingDescription() {
+		VkVertexInputBindingDescription bindingDescription{}; // how is the data packed?
+		bindingDescription.binding = 0; // one vertex data array, this is index 0
+		bindingDescription.stride = sizeof(Vertex); // number of bytes from one entry to the next
+		bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+		// the other option is INSTANCE, move to next data entry after each VERTEX/INSTANCE
+		// instanced rendering is for making a bunch of copies of a model
+
+		return bindingDescription;
+	}
+
+	static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions() {
+		std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
+		// how to extract a vertex attribute from a chunk of vertex data originating from a binding 
+		// description
+		// two attributes, pos and color, so we need two attribute description structs
+		attributeDescriptions[0].binding = 0; // which binding is the per-vertex data from
+		attributeDescriptions[0].location = 0; // same location as shader
+		attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT; // two 32 bit floats, i.e. vec2
+		// for some reason, same as color formats
+		attributeDescriptions[0].offset = offsetof(Vertex, pos); // calculate offset of pos in struct
+
+		attributeDescriptions[1].binding = 0;
+		attributeDescriptions[1].location = 1;
+		attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+		attributeDescriptions[1].offset = offsetof(Vertex, color);
+
+		return attributeDescriptions;
+	}
+};
+
+const std::vector<Vertex> vertices = {
+	{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+	{{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+	{{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+};
+
 
 class HelloTriangleApplication {
 public:
@@ -757,10 +802,14 @@ private:
 		// hard coding vertex data into shader, no vertex data to load for now
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-		vertexInputInfo.vertexBindingDescriptionCount = 0;
-		vertexInputInfo.pVertexBindingDescriptions = nullptr;
-		vertexInputInfo.vertexAttributeDescriptionCount = 0;
-		vertexInputInfo.pVertexAttributeDescriptions = nullptr;
+
+		auto bindingDescription = Vertex::getBindingDescription();
+		auto attributeDescriptions = Vertex::getAttributeDescriptions();
+
+		vertexInputInfo.vertexBindingDescriptionCount = 1;
+		vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
+		vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+		vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
 		// input assembly describes topology info
 		// point list, line list, line strip, triangle list, triangle strip etc
