@@ -13,9 +13,12 @@
 #include <cstring>
 #include <cstdint>
 #include <algorithm>
-#include <fstream>
 #include <glm/glm.hpp>
 #include <array>
+
+
+#include "utils.h"
+#include "JShaderModule.h"
 
 
 const constexpr uint32_t WIDTH = 800;
@@ -159,9 +162,9 @@ struct Vertex {
 };
 
 const std::vector<Vertex> vertices = {
-	{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-	{{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-	{{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+	{{0.0f, -0.5f}, {1.0f, 1.0f, 0.0f}},
+	{{0.5f, 0.5f}, {0.0f, 1.0f, 1.0f}},
+	{{-0.5f, 0.5f}, {1.0f, 0.0f, 1.0f}}
 };
 
 
@@ -217,6 +220,10 @@ private:
 
 	bool framebufferResized = false;
 
+	// vertex buffer
+	VkBuffer vertexBuffer;
+	VkDeviceMemory vertexBufferMemory;
+
 
 	// member functions
 	void initWindow() {
@@ -247,6 +254,7 @@ private:
 		createGraphicsPipeline();
 		createFramebuffers();
 		createCommandPool();
+		createVertexBuffer();
 		createCommandBuffers();
 		createSyncObjects();
 	}
@@ -777,29 +785,37 @@ private:
 	}
 
 	void createGraphicsPipeline() {
-		auto vertShaderCode = readFile("shaders/vert.spv");
-		auto fragShaderCode = readFile("shaders/frag.spv");
+		//auto vertShaderCode = readFile("shaders/vert.spv");
+		//auto fragShaderCode = readFile("shaders/frag.spv");
 
 		// shader modules are compiled and linked when the pipeline is created, so we can destroy them after that
-		VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
-		VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
+		//VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
+		//VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
+
+		JShaderModule vertModule(device, JShaderType::JVertex, "shaders/vert.spv");
+		JShaderModule fragModule(device, JShaderType::JFragment, "shaders/frag.spv");
 
 		VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+		vertShaderStageInfo = vertModule.stageInfo();
+		/*
 		vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT; // vertex shader stage
-		vertShaderStageInfo.module = vertShaderModule;
+		vertShaderStageInfo.module = vertModule.module(); //vertShaderModule;
 		vertShaderStageInfo.pName = "main"; // entry point
 		// not usng pSpecializationInfo, but you can pass in compile time constants, and compiler can optimize 
 		// with these values, we're setting it to nullptr
+		*/
 		VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+		fragShaderStageInfo = fragModule.stageInfo();
+		/*
 		fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT; // vertex shader stage
-		fragShaderStageInfo.module = fragShaderModule;
+		fragShaderStageInfo.module = fragModule.module(); //fragShaderModule;
 		fragShaderStageInfo.pName = "main"; // entry point
+		*/
 
 		VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
 
-		// hard coding vertex data into shader, no vertex data to load for now
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 
@@ -974,8 +990,8 @@ private:
 		}
 
 		// destroy the shader modules 
-		vkDestroyShaderModule(device, fragShaderModule, nullptr);
-		vkDestroyShaderModule(device, vertShaderModule, nullptr);
+		//vkDestroyShaderModule(device, fragShaderModule, nullptr);
+		//vkDestroyShaderModule(device, vertShaderModule, nullptr);
 	}
 
 	VkShaderModule createShaderModule(const std::vector<char>& code) {
@@ -1029,6 +1045,62 @@ private:
 		if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create command pool!");
 		}
+	}
+
+	void createVertexBuffer() {
+		VkBufferCreateInfo bufferInfo{};
+		bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		bufferInfo.size = sizeof(vertices[0]) * vertices.size();
+
+		bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+		bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // don't need to share across queues
+		// leave flags parameter at 0 for now
+
+		if (vkCreateBuffer(device, &bufferInfo, nullptr, &vertexBuffer) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create vertex buffer!");
+		}
+
+		VkMemoryRequirements memRequirements;
+		vkGetBufferMemoryRequirements(device, vertexBuffer, &memRequirements);
+
+		VkMemoryAllocateInfo allocInfo{};
+		allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocInfo.allocationSize = memRequirements.size;
+		allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+		if (vkAllocateMemory(device, &allocInfo, nullptr, &vertexBufferMemory) != VK_SUCCESS) {
+			throw std::runtime_error("failed to allocate vertex buffer memory!");
+		}
+
+		vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0);
+		// fourth parameter is offset
+		// if nonzero, offset must be divisible by memReq.alignment
+
+		void* data;
+		// params are device, memory, offset, size, flags, ptr to ptr
+		vkMapMemory(device, vertexBufferMemory, 0, bufferInfo.size, 0, &data);
+		memcpy(data, vertices.data(), (size_t)bufferInfo.size);
+		vkUnmapMemory(device, vertexBufferMemory);
+		// driver may not immediately copy the data on write,
+		// two strategies:
+		// VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+		// or call
+		// flushmappedmemory ranges after writing to mapped
+		// invalidate mapped memory ranges before reading
+	}
+	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+		VkPhysicalDeviceMemoryProperties memProperties;
+		vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+
+		for (uint32_t i = 0; i < memProperties.memoryTypeCount; ++i) {
+			if ((typeFilter & (1 << i)) // check if the ith bit in type filter is 1
+				&& (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+				// check to make sure it has all of the properties
+				return i;
+			}
+		}
+
 	}
 
 	void createCommandBuffers() {
@@ -1086,12 +1158,16 @@ private:
 			// bind the pipeline
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 			
+			VkBuffer vertexBuffers[] = { vertexBuffer };
+			VkDeviceSize offsets[] = { 0 };
+			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
+
 			// draw has parameters
 			// vertexCount (3 vertices)
 			// instanceCount (for instanced rendering, 1 if not doing instanced rendering)
 			// firstVertex (offset into vertex buffer, defines lowest value of gl_VertexIndex)
 			// firstInstance (used as an offset for instanced rendering, lowest value of gl_InstanceIndex)
-			vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+			vkCmdDraw(commandBuffers[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0);
 			vkCmdEndRenderPass(commandBuffers[i]);
 			if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
 				throw std::runtime_error("failed to record command buffer!");
@@ -1280,6 +1356,9 @@ private:
 
 		cleanupSwapChain();
 
+		vkDestroyBuffer(device, vertexBuffer, nullptr);
+		vkFreeMemory(device, vertexBufferMemory, nullptr); // can be freed when the buffer is not longer in use
+
 		vkDestroyCommandPool(device, commandPool, nullptr);
 
 		vkDestroyDevice(device, nullptr); // destroy the logical device
@@ -1316,22 +1395,6 @@ private:
 		return VK_FALSE;
 	}
 
-	static std::vector<char> readFile(const std::string& filename) {
-		std::ifstream file(filename, std::ios::ate | std::ios::binary); // ate - start at end, binary - binary file
-
-		if (!file.is_open()) {
-			throw std::runtime_error("failed to open file!");
-		}
-
-		size_t fileSize = (size_t) file.tellg();
-		std::vector<char> buffer(fileSize);
-
-		file.seekg(0); // back to beginning
-		file.read(buffer.data(), fileSize); // read entire file in
-		file.close(); // close file
-
-		return buffer;
-	}
 };
 
 
