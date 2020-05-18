@@ -23,7 +23,7 @@ JBuffer::JBuffer(VkPhysicalDevice physicalDevice,
 	, _device(device)
 	, _size(size)
 	, _usage(usage)
-	, _properties(properties);
+	, _properties(properties)
 {
 	VkBufferCreateInfo bufferInfo{};
 	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;

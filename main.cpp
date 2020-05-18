@@ -19,6 +19,7 @@
 
 #include "utils.h"
 #include "JShaderModule.h"
+#include "JBuffer.h"
 
 
 const constexpr uint32_t WIDTH = 800;
@@ -221,8 +222,10 @@ private:
 	bool framebufferResized = false;
 
 	// vertex buffer
-	VkBuffer vertexBuffer;
-	VkDeviceMemory vertexBufferMemory;
+	JBuffer* vertBuffer = nullptr;
+	
+	//VkBuffer vertexBuffer;
+	//VkDeviceMemory vertexBufferMemory;
 
 
 	// member functions
@@ -1048,6 +1051,7 @@ private:
 	}
 
 	void createVertexBuffer() {
+		/*
 		VkBufferCreateInfo bufferInfo{};
 		bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferInfo.size = sizeof(vertices[0]) * vertices.size();
@@ -1077,17 +1081,85 @@ private:
 		// fourth parameter is offset
 		// if nonzero, offset must be divisible by memReq.alignment
 
+		*/
+
+		VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
+
+		JBuffer stagingBuffer(
+			physicalDevice,
+			device,
+			bufferSize,
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT, // used as source to transfer data to another buffer
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT // mappable
+		); // automatically destroyed when it goes out of scope
+
 		void* data;
 		// params are device, memory, offset, size, flags, ptr to ptr
-		vkMapMemory(device, vertexBufferMemory, 0, bufferInfo.size, 0, &data);
-		memcpy(data, vertices.data(), (size_t)bufferInfo.size);
-		vkUnmapMemory(device, vertexBufferMemory);
+		vkMapMemory(device, stagingBuffer.memory(), 0, bufferSize, 0, &data);
+		memcpy(data, vertices.data(), (size_t)bufferSize);
+		vkUnmapMemory(device, stagingBuffer.memory());
 		// driver may not immediately copy the data on write,
 		// two strategies:
 		// VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
 		// or call
 		// flushmappedmemory ranges after writing to mapped
 		// invalidate mapped memory ranges before reading
+
+
+		vertBuffer = new JBuffer(
+			physicalDevice,
+			device,
+			bufferSize,
+			VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+		);
+
+		copyBuffer(stagingBuffer.buffer(), vertBuffer->buffer(), bufferSize);
+
+		// staging buffer goes out of scope and gets cleaned up
+		// NOTE: IRL should not allocate memory for every buffer, 
+		// should use a custom allocator, or use the VulkanMemoryAllocator library
+		// however, for this tutorial, will be ok.
+	}
+
+	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
+		// need to allocate a temporary command buffer
+		// might want a separate command pool for temporary command buffers so that 
+		// we can pass the VK_COMMAND_POOL_CREATE_TRANSIENT_BIT flag
+		// the implementation might be able to optimize in that case
+		VkCommandBufferAllocateInfo allocInfo{};
+		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; // primary command buffer
+		allocInfo.commandPool = commandPool; // main command pool
+		allocInfo.commandBufferCount = 1; // one command buffer
+
+		VkCommandBuffer commandBuffer;
+		vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
+		
+		// record it
+		VkCommandBufferBeginInfo beginInfo{};
+		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; // only going to use this once
+
+		vkBeginCommandBuffer(commandBuffer, &beginInfo);
+		VkBufferCopy copyRegion{};
+		copyRegion.srcOffset = 0; // optional
+		copyRegion.dstOffset = 0; // optional
+		copyRegion.size = size;
+
+		vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion); // takes an array of regions
+		// note not allowed to specify VK_WHOLE_SIZE for copyRegion.size
+		vkEndCommandBuffer(commandBuffer); // just want to copy, so stop recording
+
+		VkSubmitInfo submitInfo{};
+		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submitInfo.commandBufferCount = 1;
+		submitInfo.pCommandBuffers = &commandBuffer;
+
+		vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+		vkQueueWaitIdle(graphicsQueue); // could also use a fence and wait on the fence
+
+		vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 	}
 
 	// leaving this here. It's been sort of moved to JBuffer
@@ -1160,7 +1232,7 @@ private:
 			// bind the pipeline
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 			
-			VkBuffer vertexBuffers[] = { vertexBuffer };
+			VkBuffer vertexBuffers[] = { vertBuffer->buffer() };
 			VkDeviceSize offsets[] = { 0 };
 			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
 
@@ -1358,8 +1430,9 @@ private:
 
 		cleanupSwapChain();
 
-		vkDestroyBuffer(device, vertexBuffer, nullptr);
-		vkFreeMemory(device, vertexBufferMemory, nullptr); // can be freed when the buffer is not longer in use
+		delete vertBuffer;
+		//vkDestroyBuffer(device, vertexBuffer, nullptr);
+		//vkFreeMemory(device, vertexBufferMemory, nullptr); // can be freed when the buffer is not longer in use
 
 		vkDestroyCommandPool(device, commandPool, nullptr);
 
