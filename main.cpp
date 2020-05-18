@@ -163,9 +163,15 @@ struct Vertex {
 };
 
 const std::vector<Vertex> vertices = {
-	{{0.0f, -0.5f}, {1.0f, 1.0f, 0.0f}},
-	{{0.5f, 0.5f}, {0.0f, 1.0f, 1.0f}},
-	{{-0.5f, 0.5f}, {1.0f, 0.0f, 1.0f}}
+	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+	{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+	{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+	{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+};
+
+// 16 bit indices b/c less than 65535 unique vertices
+const std::vector<uint16_t> indices = {
+	0, 1, 2, 2, 3, 0
 };
 
 
@@ -223,6 +229,7 @@ private:
 
 	// vertex buffer
 	JBuffer* vertBuffer = nullptr;
+	JBuffer* indexBuffer = nullptr;
 	
 	//VkBuffer vertexBuffer;
 	//VkDeviceMemory vertexBufferMemory;
@@ -258,6 +265,7 @@ private:
 		createFramebuffers();
 		createCommandPool();
 		createVertexBuffer();
+		createIndexBuffer();
 		createCommandBuffers();
 		createSyncObjects();
 	}
@@ -1121,6 +1129,34 @@ private:
 		// should use a custom allocator, or use the VulkanMemoryAllocator library
 		// however, for this tutorial, will be ok.
 	}
+	void createIndexBuffer() {
+		VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
+
+		JBuffer stagingBuffer(
+			physicalDevice,
+			device,
+			bufferSize,
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT, // used as source to transfer data to another buffer
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT // mappable
+		); // automatically destroyed when it goes out of scope
+
+		void* data;
+		vkMapMemory(device, stagingBuffer.memory(), 0, bufferSize, 0, &data);
+		memcpy(data, indices.data(), (size_t)bufferSize);
+		vkUnmapMemory(device, stagingBuffer.memory());
+
+
+		indexBuffer = new JBuffer(
+			physicalDevice,
+			device,
+			bufferSize,
+			VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+		);
+
+		copyBuffer(stagingBuffer.buffer(), indexBuffer->buffer(), bufferSize);
+		// staging buffer goes out of scope and gets cleaned up
+	}
 
 	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
 		// need to allocate a temporary command buffer
@@ -1236,12 +1272,17 @@ private:
 			VkDeviceSize offsets[] = { 0 };
 			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
 
+			vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer->buffer(), 0, VK_INDEX_TYPE_UINT16);
+
 			// draw has parameters
 			// vertexCount (3 vertices)
 			// instanceCount (for instanced rendering, 1 if not doing instanced rendering)
 			// firstVertex (offset into vertex buffer, defines lowest value of gl_VertexIndex)
 			// firstInstance (used as an offset for instanced rendering, lowest value of gl_InstanceIndex)
-			vkCmdDraw(commandBuffers[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0);
+			//vkCmdDraw(commandBuffers[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0);
+			vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+			// 1 instance, the zeros are offset into index, offset to add to indices in index buffer, then
+			// offset for instancing, which we're not using
 			vkCmdEndRenderPass(commandBuffers[i]);
 			if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
 				throw std::runtime_error("failed to record command buffer!");
@@ -1431,6 +1472,7 @@ private:
 		cleanupSwapChain();
 
 		delete vertBuffer;
+		delete indexBuffer;
 		//vkDestroyBuffer(device, vertexBuffer, nullptr);
 		//vkFreeMemory(device, vertexBufferMemory, nullptr); // can be freed when the buffer is not longer in use
 
