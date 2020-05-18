@@ -195,11 +195,13 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="JBuffer.cpp" />
     <ClCompile Include="JShaderModule.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="utils.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="JBuffer.h" />
     <ClInclude Include="JShaderModule.h" />
     <ClInclude Include="utils.h" />
   </ItemGroup>

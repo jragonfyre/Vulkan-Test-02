@@ -24,6 +24,7 @@ public:
 	JShaderModule(VkDevice device, JShaderType type, const std::vector<char>& code, const char* entrypoint = "main");
 	JShaderModule(VkDevice device, JShaderType type, const std::string fname, const char* entrypoint = "main");
 	JShaderModule() = delete;
+	JShaderModule(const JShaderModule& other) = delete;
 	~JShaderModule();
 	inline VkShaderModule module() { return _module; }
 	VkPipelineShaderStageCreateInfo stageInfo();

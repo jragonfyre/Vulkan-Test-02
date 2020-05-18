@@ -1089,6 +1089,8 @@ private:
 		// flushmappedmemory ranges after writing to mapped
 		// invalidate mapped memory ranges before reading
 	}
+
+	// leaving this here. It's been sort of moved to JBuffer
 	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
 		VkPhysicalDeviceMemoryProperties memProperties;
 		vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
