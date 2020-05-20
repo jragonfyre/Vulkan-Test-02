@@ -4,6 +4,7 @@
 
 #include <vector>
 #include <string>
+#include "JDevice.h"
 
 enum JShaderType : uint32_t {
 	JVertex = 0x1, 
@@ -16,17 +17,23 @@ class JShaderModule
 {
 protected:
 	VkShaderModule _module;
-	VkDevice device;
+	const JDevice* _pDevice;
+	//VkDevice _device;
 	JShaderType _type;
 	const char* _entrypoint;
 public:
-	JShaderModule(VkDevice device, JShaderType type, const char* fname, const char* entrypoint = "main");
-	JShaderModule(VkDevice device, JShaderType type, const std::vector<char>& code, const char* entrypoint = "main");
-	JShaderModule(VkDevice device, JShaderType type, const std::string fname, const char* entrypoint = "main");
+	//JShaderModule(const JDevice* device, JShaderType type, const char* fname, const char* entrypoint = "main");
+	//JShaderModule(VkDevice device, JShaderType type, const char* fname, const char* entrypoint = "main");
+	//JShaderModule(VkDevice device, JShaderType type, const std::vector<char>& code, const char* entrypoint = "main");
+	//JShaderModule(VkDevice device, JShaderType type, const std::string fname, const char* entrypoint = "main");
+	JShaderModule(const JDevice* device, JShaderType type, const char* fname, const char* entrypoint = "main");
+	JShaderModule(const JDevice* device, JShaderType type, const std::vector<char>& code, const char* entrypoint = "main");
+	JShaderModule(const JDevice* device, JShaderType type, const std::string fname, const char* entrypoint = "main");
+
 	JShaderModule() = delete;
 	JShaderModule(const JShaderModule& other) = delete;
-	~JShaderModule();
-	inline VkShaderModule module() { return _module; }
-	VkPipelineShaderStageCreateInfo stageInfo();
+	virtual ~JShaderModule();
+	inline VkShaderModule module() const { return _module; }
+	VkPipelineShaderStageCreateInfo stageInfo() const;
 };
 
