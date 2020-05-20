@@ -665,7 +665,7 @@ private:
 		vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
 		vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
 		*/
-		// TODO
+		device = new JDevice(physicalDevice, surface, deviceExtensions, enableValidationLayers, validationLayers);
 	}
 
 	void createSwapChain() {
