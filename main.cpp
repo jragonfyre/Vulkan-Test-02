@@ -665,6 +665,7 @@ private:
 		vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
 		vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
 		*/
+		// todo
 		device = new JDevice(physicalDevice, surface, deviceExtensions, enableValidationLayers, validationLayers);
 	}
 
