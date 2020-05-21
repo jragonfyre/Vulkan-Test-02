@@ -13,6 +13,7 @@
 #include <map>
 #include <set>
 #include <optional>
+#include <functional>
 #include <cstring>
 #include <cstdint>
 
@@ -1217,6 +1218,17 @@ private:
 	}
 
 	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
+		//<std::is_function<void(JCommandBuffer)>, void >
+		JCommandBuffers::runWithSingleTimeCommandBuffer<std::function<int(JCommandBuffer)>, int >(
+				transientPool,
+				[srcBuffer, dstBuffer, size](JCommandBuffer buffer)->int {
+			VkBufferCopy copyRegion{};
+			copyRegion.size = size;
+			vkCmdCopyBuffer(buffer.buffer(), srcBuffer, dstBuffer, 1, &copyRegion);
+			return 0;
+			});
+		
+		/*
 		// need to allocate a temporary command buffer
 		// might want a separate command pool for temporary command buffers so that 
 		// we can pass the VK_COMMAND_POOL_CREATE_TRANSIENT_BIT flag
@@ -1254,6 +1266,7 @@ private:
 		vkQueueWaitIdle(device->graphicsQueue()); // could also use a fence and wait on the fence
 
 		vkFreeCommandBuffers(device->device(), transientPool->pool(), 1, &commandBuffer);
+		*/
 	}
 
 

@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include "JBuffer.h"
 #include "vkutils.h"
+#include "JCommandBuffer.h"
 
 
 
@@ -11,6 +12,7 @@ JImage::JImage(
 	//VkPhysicalDevice physical,
 	//VkDevice device,
 	const JDevice* device,
+	const JCommandPool* pool,
 	std::string fname,
 	VkFormat format,
 	VkImageTiling tiling,
@@ -56,6 +58,10 @@ JImage::JImage(
 	stbi_image_free(pixels); // clean up pixel array
 
 	initializeImage();
+
+	//JCommandBuffers::runWithSingleTimeCommandBuffer(pool, [&stagingBuffer, this](JCommandBuffer buffer) {
+	//		
+	//	});
 
 	// TODO copy memory over
 }

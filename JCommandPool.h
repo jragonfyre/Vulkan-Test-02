@@ -2,9 +2,7 @@
 
 #include "JDevice.h"
 
-enum class JQueueType {
-	JGraphicsQueue, JPresentQueue
-};
+
 
 class JCommandPool
 {
@@ -26,6 +24,12 @@ public:
 	inline JQueueType type() const { return _type; }
 	inline VkCommandPoolCreateFlags creationFlags() const { return _flags; }
 	
+	// custom methods
+	inline VkQueue queue() const { return _device->getQueue(_type); }
+
+
+	// vulkan proxies
+
 	// fills in the pool information
 	// might change this later
 	inline int allocateCommandBuffers(VkCommandBufferAllocateInfo& allocInfo, VkCommandBuffer* buffers) const { 

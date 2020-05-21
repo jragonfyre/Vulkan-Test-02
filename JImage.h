@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 #include <string>
 #include "JDevice.h"
+#include "JCommandPool.h"
 
 class JImage
 {
@@ -31,6 +32,7 @@ public:
 		//VkPhysicalDevice physical, 
 		//VkDevice device, 
 		const JDevice* device,
+		const JCommandPool* pool,
 		std::string fname,
 		VkFormat format = VK_FORMAT_R8G8B8A8_SRGB,
 		VkImageTiling tiling = VK_IMAGE_TILING_OPTIMAL,

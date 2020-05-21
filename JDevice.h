@@ -7,7 +7,9 @@
 #include <string>
 
 
-
+enum class JQueueType {
+	JGraphicsQueue, JPresentQueue
+};
 
 class JDevice
 {
@@ -40,6 +42,14 @@ public:
 	inline VkQueue presentQueue() const { return _presentQueue; }
 	inline const QueueFamilyIndices& queueIndices() const { return _indices; }
 
+	inline VkQueue getQueue(JQueueType type) const {
+		switch (type) {
+		case JQueueType::JGraphicsQueue:
+			return _graphicsQueue;
+		case JQueueType::JPresentQueue:
+			return _presentQueue;
+		}
+	}
 private:
 	//void nullify();
 
