@@ -37,6 +37,8 @@
 #include "JShaderModule.h"
 #include "JBuffer.h"
 #include "JDevice.h"
+#include "JCommandPool.h"
+#include "JCommandBuffer.h"
 
 
 const constexpr uint32_t WIDTH = 800;
@@ -222,8 +224,12 @@ private:
 	std::vector<VkFramebuffer> swapChainFramebuffers;
 
 	// command pools and buffers
-	VkCommandPool commandPool;
-	std::vector<VkCommandBuffer> commandBuffers;
+	//VkCommandPool commandPool;
+	JCommandPool* commandPool;
+	JCommandPool* transientPool;
+	
+	JCommandBuffers* commandBuffers;
+	//std::vector<VkCommandBuffer> commandBuffers;
 
 	// descriptor pool
 	VkDescriptorPool descriptorPool;
@@ -614,58 +620,6 @@ private:
 	}
 
 	void createLogicalDevice() {
-		/*
-		QueueFamilyIndices indices = findQueueFamilies(physicalDevice, surface);
-
-		// vector of queue infos
-		std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-		// set of distinct queue indices
-		std::set<uint32_t> uniqueQueueFamilies = { indices.graphicsFamily.value(), indices.presentFamily.value() };
-
-		float queuePriority = 1.0f;
-		for (uint32_t queueFamily : uniqueQueueFamilies) {
-			VkDeviceQueueCreateInfo queueCreateInfo{};
-			queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-			queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
-			queueCreateInfo.queueCount = 1;
-			queueCreateInfo.pQueuePriorities = &queuePriority;
-			queueCreateInfos.push_back(queueCreateInfo);
-		}
-
-		// don't need any device features yet, so leave blank
-		VkPhysicalDeviceFeatures deviceFeatures{};
-
-		VkDeviceCreateInfo createInfo{};
-		createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-		createInfo.pQueueCreateInfos = queueCreateInfos.data();
-		createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
-		createInfo.pEnabledFeatures = &deviceFeatures;
-
-		//createInfo.enabledExtensionCount = 0; // device extensions, none for now
-		createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
-		createInfo.ppEnabledExtensionNames = deviceExtensions.data();
-
-
-		// not needed for modern vulkan, but for compatibility, include validation layers on device createinfo
-		if (enableValidationLayers) {
-			createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
-			createInfo.ppEnabledLayerNames = validationLayers.data();
-		}
-		else {
-			createInfo.enabledLayerCount = 0;
-		}
-
-		// create the logical device
-		if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create logical device!");
-		}
-
-		// finally retrieve the queue handles (the queues are created with the device)
-		// 0 is the index of the queue in the family, since we're only creating one.
-		vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
-		vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
-		*/
-		// todo
 		device = new JDevice(physicalDevice, surface, deviceExtensions, enableValidationLayers, validationLayers);
 	}
 
@@ -1102,6 +1056,7 @@ private:
 	}
 
 	void createCommandPool() {
+		/*
 		QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice, surface);
 
 		VkCommandPoolCreateInfo poolInfo{};
@@ -1115,6 +1070,9 @@ private:
 		if (vkCreateCommandPool(device->device(), &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create command pool!");
 		}
+		*/
+		commandPool = new JCommandPool(device);
+		transientPool = new JCommandPool(device, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
 	}
 
 	void createTextureImage() {
@@ -1266,7 +1224,7 @@ private:
 		VkCommandBufferAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 		allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; // primary command buffer
-		allocInfo.commandPool = commandPool; // main command pool
+		allocInfo.commandPool = transientPool->pool(); // main command pool
 		allocInfo.commandBufferCount = 1; // one command buffer
 
 		VkCommandBuffer commandBuffer;
@@ -1295,17 +1253,18 @@ private:
 		vkQueueSubmit(device->graphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE);
 		vkQueueWaitIdle(device->graphicsQueue()); // could also use a fence and wait on the fence
 
-		vkFreeCommandBuffers(device->device(), commandPool, 1, &commandBuffer);
+		vkFreeCommandBuffers(device->device(), transientPool->pool(), 1, &commandBuffer);
 	}
 
 
 	void createCommandBuffers() {
+		/*
 		commandBuffers.resize(swapChainFramebuffers.size());
 		
 		// need allocateInfo
 		VkCommandBufferAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-		allocInfo.commandPool = commandPool;
+		allocInfo.commandPool = commandPool->pool();
 		allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; // primary or secondary
 		// primary can be submitted to a queue for execution, but not called from other buffers
 		// secondary can be called from other buffers, but not submitted directly
@@ -1314,8 +1273,10 @@ private:
 		if (vkAllocateCommandBuffers(device->device(), &allocInfo, commandBuffers.data()) != VK_SUCCESS) {
 			throw std::runtime_error("failed to allocate command buffers!");
 		}
+		*/
+		commandBuffers = new JCommandBuffers(commandPool, swapChainFramebuffers.size(), VK_COMMAND_BUFFER_LEVEL_PRIMARY);
 
-		for (size_t i = 0; i < commandBuffers.size(); ++i) {
+		for (size_t i = 0; i < commandBuffers->size(); ++i) {
 			VkCommandBufferBeginInfo beginInfo{};
 			beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 			beginInfo.flags = 0; // optional
@@ -1326,7 +1287,8 @@ private:
 			// only for secondary command buffers, what state to inherit from primary command buffers
 
 			// beginCommandBuffer will reset the command buffer (implicitly)
-			if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS) {
+			//if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS) {
+			if ((*commandBuffers)[i].beginCommandBuffer(&beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording command buffer!");
 			}
 
@@ -1346,23 +1308,23 @@ private:
 			// several layers or something?
 			// clear color to use for LOAD_OP_CLEAR 
 
-			vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+			vkCmdBeginRenderPass((*commandBuffers)[i].buffer(), &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 			// start the render pass, vkCmd prefix identifies functions that record commands
 			// SUBPASS_CONTENTS: INLINE (render pass commands are in primary command buffer, no secondary command buffers)
 			// SECONDARY_COMMAND_BUFFERS (render pass commands will be executed from secondary command buffers)
 			
 			// bind the pipeline
-			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+			vkCmdBindPipeline((*commandBuffers)[i].buffer(), VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 			
 			VkBuffer vertexBuffers[] = { vertBuffer->buffer() };
 			VkDeviceSize offsets[] = { 0 };
-			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
+			vkCmdBindVertexBuffers((*commandBuffers)[i].buffer(), 0, 1, vertexBuffers, offsets);
 
-			vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer->buffer(), 0, VK_INDEX_TYPE_UINT16);
+			vkCmdBindIndexBuffer((*commandBuffers)[i].buffer(), indexBuffer->buffer(), 0, VK_INDEX_TYPE_UINT16);
 
 			// bind descriptor sets 
 			vkCmdBindDescriptorSets(
-				commandBuffers[i], 
+				(*commandBuffers)[i].buffer(), 
 				VK_PIPELINE_BIND_POINT_GRAPHICS, // bind to graphics pipeline
 				pipelineLayout, // layout descriptors are based on
 				0, // index of first descriptor sets
@@ -1377,11 +1339,11 @@ private:
 			// firstVertex (offset into vertex buffer, defines lowest value of gl_VertexIndex)
 			// firstInstance (used as an offset for instanced rendering, lowest value of gl_InstanceIndex)
 			//vkCmdDraw(commandBuffers[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0);
-			vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+			vkCmdDrawIndexed((*commandBuffers)[i].buffer(), static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 			// 1 instance, the zeros are offset into index, offset to add to indices in index buffer, then
 			// offset for instancing, which we're not using
-			vkCmdEndRenderPass(commandBuffers[i]);
-			if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
+			vkCmdEndRenderPass((*commandBuffers)[i].buffer());
+			if ((*commandBuffers)[i].endCommandBuffer() != VK_SUCCESS) {
 				throw std::runtime_error("failed to record command buffer!");
 			}
 		}
@@ -1467,7 +1429,8 @@ private:
 		// wait stages <-> wait semaphores
 		
 		submitInfo.commandBufferCount = 1;
-		submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
+		VkCommandBuffer buffer = (*commandBuffers)[imageIndex].buffer();
+		submitInfo.pCommandBuffers = &buffer;
 
 		VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };
 		submitInfo.signalSemaphoreCount = 1;
@@ -1576,7 +1539,8 @@ private:
 		}
 
 		// frees command buffers without recreating the command pool
-		vkFreeCommandBuffers(device->device(), commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
+		//vkFreeCommandBuffers(device->device(), commandPool->pool(), static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
+		delete commandBuffers; commandBuffers = nullptr;
 
 		vkDestroyPipeline(device->device(), graphicsPipeline, nullptr);
 		vkDestroyPipelineLayout(device->device(), pipelineLayout, nullptr);
@@ -1612,10 +1576,12 @@ private:
 		//vkDestroyBuffer(device, vertexBuffer, nullptr);
 		//vkFreeMemory(device, vertexBufferMemory, nullptr); // can be freed when the buffer is not longer in use
 
-		vkDestroyCommandPool(device->device(), commandPool, nullptr);
+		//vkDestroyCommandPool(device->device(), commandPool, nullptr);
+		delete commandPool; commandPool = nullptr;
+		delete transientPool; transientPool = nullptr;
 
 		//vkDestroyDevice(device, nullptr); // destroy the logical device
-		delete device;
+		delete device; device = nullptr;
 
 		vkDestroySurfaceKHR(instance, surface, nullptr); // destroy the surface
 

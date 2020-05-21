@@ -196,6 +196,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="JBuffer.cpp" />
+    <ClCompile Include="JCommandBuffer.cpp" />
+    <ClCompile Include="JCommandPool.cpp" />
     <ClCompile Include="JDevice.cpp" />
     <ClCompile Include="JImage.cpp" />
     <ClCompile Include="JShaderModule.cpp" />
@@ -205,6 +207,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="JBuffer.h" />
+    <ClInclude Include="JCommandBuffer.h" />
+    <ClInclude Include="JCommandPool.h" />
     <ClInclude Include="JDevice.h" />
     <ClInclude Include="JImage.h" />
     <ClInclude Include="JShaderModule.h" />

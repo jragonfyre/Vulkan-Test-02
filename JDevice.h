@@ -6,18 +6,23 @@
 #include <vector>
 #include <string>
 
+
+
+
 class JDevice
 {
 protected:
-	VkPhysicalDevice _physical;
-	VkSurfaceKHR _surface;
+	VkPhysicalDevice _physical = VK_NULL_HANDLE;
+	VkSurfaceKHR _surface = VK_NULL_HANDLE;
 
-	QueueFamilyIndices _indices;
+	QueueFamilyIndices _indices{};
 
-	VkDevice _device;
+	VkDevice _device = VK_NULL_HANDLE;
 
-	VkQueue _graphicsQueue;
-	VkQueue _presentQueue;
+	VkQueue _graphicsQueue = VK_NULL_HANDLE;
+	VkQueue _presentQueue = VK_NULL_HANDLE;
+
+	//bool reference = false;
 
 	const std::vector<const char*>* _deviceExtensions;
 
@@ -33,5 +38,12 @@ public:
 	inline VkPhysicalDevice physical() const { return _physical; }
 	inline VkQueue graphicsQueue() const { return _graphicsQueue; }
 	inline VkQueue presentQueue() const { return _presentQueue; }
+	inline const QueueFamilyIndices& queueIndices() const { return _indices; }
+
+private:
+	//void nullify();
+
 };
+
+
 

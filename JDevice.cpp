@@ -12,19 +12,18 @@ JDevice::JDevice(VkPhysicalDevice physical, VkSurfaceKHR surface, const std::vec
 	, _presentQueue(VK_NULL_HANDLE)
 	, _deviceExtensions(&deviceExtensions)
 {
-
-	QueueFamilyIndices indices = findQueueFamilies(_physical, _surface);
+	_indices = findQueueFamilies(_physical, _surface);
 
 	// vector of queue infos
 	std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
 	// set of distinct queue indices
-	std::set<uint32_t> uniqueQueueFamilies = { indices.graphicsFamily.value(), indices.presentFamily.value() };
+	std::set<uint32_t> uniqueQueueFamilies = { _indices.graphicsFamily.value(), _indices.presentFamily.value() };
 
 	float queuePriority = 1.0f;
 	for (uint32_t queueFamily : uniqueQueueFamilies) {
 		VkDeviceQueueCreateInfo queueCreateInfo{};
 		queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-		queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
+		queueCreateInfo.queueFamilyIndex = queueFamily;//_indices.graphicsFamily.value();
 		queueCreateInfo.queueCount = 1;
 		queueCreateInfo.pQueuePriorities = &queuePriority;
 		queueCreateInfos.push_back(queueCreateInfo);
@@ -59,8 +58,8 @@ JDevice::JDevice(VkPhysicalDevice physical, VkSurfaceKHR surface, const std::vec
 
 	// finally retrieve the queue handles (the queues are created with the device)
 	// 0 is the index of the queue in the family, since we're only creating one.
-	vkGetDeviceQueue(_device, indices.graphicsFamily.value(), 0, &_graphicsQueue);
-	vkGetDeviceQueue(_device, indices.presentFamily.value(), 0, &_presentQueue);
+	vkGetDeviceQueue(_device, _indices.graphicsFamily.value(), 0, &_graphicsQueue);
+	vkGetDeviceQueue(_device, _indices.presentFamily.value(), 0, &_presentQueue);
 }
 
 JDevice::~JDevice()
