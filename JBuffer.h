@@ -20,8 +20,8 @@ protected:
 
 public:
 
-	inline VkBuffer buffer() { return _buffer; }
-	inline VkDeviceMemory memory() { return _bufferMemory; }
+	inline VkBuffer buffer() const { return _buffer; }
+	inline VkDeviceMemory memory() const { return _bufferMemory; }
 	
 	JBuffer(
 		//VkPhysicalDevice physicalDevice,

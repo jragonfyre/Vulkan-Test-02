@@ -15,6 +15,9 @@ protected:
 	//VkPhysicalDevice _physical;
 	//VkDevice _device;
 	const JDevice* _pDevice;
+	const JCommandPool* _pool;
+
+	VkImageLayout _layout = VK_IMAGE_LAYOUT_UNDEFINED;
 
 	VkFormat _format;
 	VkImageTiling _tiling;
@@ -43,6 +46,7 @@ public:
 		//VkPhysicalDevice physical,
 		//VkDevice device,
 		const JDevice* device,
+		const JCommandPool* pool,
 		uint32_t width,
 		uint32_t height,
 		VkFormat format = VK_FORMAT_R8G8B8A8_SRGB,
@@ -59,6 +63,12 @@ public:
 	inline uint32_t height() const { return _height; }
 
 	inline VkExtent2D extent() const { VkExtent2D ans{}; ans.height = height(); ans.width = width(); return ans; }
+	inline VkImageLayout currentLayout() const { return _layout; }
+
+	void transitionImageLayout(VkFormat format, VkImageLayout newLayout);
+
+	// copies whole buffer to whole image
+	void copyBufferToImage(const JBuffer* buffer); 
 
 private:
 	void initializeImage();

@@ -40,7 +40,7 @@
 #include "JDevice.h"
 #include "JCommandPool.h"
 #include "JCommandBuffer.h"
-
+#include "JImage.h"
 
 const constexpr uint32_t WIDTH = 800;
 const constexpr uint32_t HEIGHT = 600;
@@ -262,6 +262,10 @@ private:
 	std::vector<uint16_t> indices = {
 		0, 1, 2, 2, 3, 0
 	};
+
+	// texture image
+
+	JImage* textureImage;
 	
 	//VkBuffer vertexBuffer;
 	//VkDeviceMemory vertexBufferMemory;
@@ -1077,6 +1081,7 @@ private:
 	}
 
 	void createTextureImage() {
+		textureImage = new JImage(device, transientPool, "textures/stones-1000x1000.jpg");
 	}
 
 	void createVertexBuffer() {
@@ -1219,14 +1224,13 @@ private:
 
 	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
 		//<std::is_function<void(JCommandBuffer)>, void >
-		JCommandBuffers::runWithSingleTimeCommandBuffer<std::function<int(JCommandBuffer)>, int >(
-				transientPool,
-				[srcBuffer, dstBuffer, size](JCommandBuffer buffer)->int {
-			VkBufferCopy copyRegion{};
-			copyRegion.size = size;
-			vkCmdCopyBuffer(buffer.buffer(), srcBuffer, dstBuffer, 1, &copyRegion);
-			return 0;
-			});
+		JCommandBuffers::runWithSingleTimeCommandBuffer(
+			transientPool,
+			[srcBuffer, dstBuffer, size](JCommandBuffer buffer)->int {
+					VkBufferCopy copyRegion{};
+					copyRegion.size = size;
+					vkCmdCopyBuffer(buffer.buffer(), srcBuffer, dstBuffer, 1, &copyRegion);
+				});
 		
 		/*
 		// need to allocate a temporary command buffer
@@ -1581,6 +1585,8 @@ private:
 		}
 
 		cleanupSwapChain();
+
+		delete textureImage;
 
 		vkDestroyDescriptorSetLayout(device->device(), descriptorSetLayout, nullptr);
 

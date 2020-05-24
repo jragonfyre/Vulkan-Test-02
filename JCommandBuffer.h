@@ -85,18 +85,18 @@ public:
 
 	inline uint32_t size() { return _buffers.size(); }
 
-	template<typename F, typename T>
-	static T withTransientCommandBuffer(const JCommandPool* pool, F function, VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY) {
+	template<typename F>
+	static void withTransientCommandBuffer(const JCommandPool* pool, F function, VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY) {
 		JCommandBuffers b(pool, 1, level);
 		return function(b[0]);
 		// b is automatically destroyed here
 	}
-	template<typename F, typename T>
-	static T runWithSingleTimeCommandBuffer(const JCommandPool* pool, F function) {
-		JCommandBuffers b(pool, 1, level);
+	template<typename F>
+	static void runWithSingleTimeCommandBuffer(const JCommandPool* pool, F function) {
+		JCommandBuffers b(pool, 1, VK_COMMAND_BUFFER_LEVEL_PRIMARY);
 		JCommandBuffer buffer = b[0];
 		buffer.beginCommandBufferSingleTime();
-		T ans = function(buffer);
+		function(buffer);
 		buffer.endAndSubmitSingleTimeBuffer();
 		return ans;
 		// b is automatically destroyed here

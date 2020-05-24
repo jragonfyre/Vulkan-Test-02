@@ -19,6 +19,7 @@ JImage::JImage(
 	VkImageUsageFlags usage,
 	VkMemoryPropertyFlags properties)
 	: _pDevice(device)
+	, _pool(pool)
 	// _physical(physical)
 	//, _device(device)
 	, _image(VK_NULL_HANDLE)
@@ -59,17 +60,20 @@ JImage::JImage(
 
 	initializeImage();
 
-	//JCommandBuffers::runWithSingleTimeCommandBuffer(pool, [&stagingBuffer, this](JCommandBuffer buffer) {
-	//		
-	//	});
+	transitionImageLayout(VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
-	// TODO copy memory over
+	copyBufferToImage(&stagingBuffer);
+
+	transitionImageLayout(VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	
+	// todo: consider moving image loading code elsewhere
 }
 
 JImage::JImage(
 	//VkPhysicalDevice physical,
 	//VkDevice device,
 	const JDevice* device,
+	const JCommandPool* pool,
 	uint32_t width,
 	uint32_t height,
 	VkFormat format,
@@ -77,6 +81,7 @@ JImage::JImage(
 	VkImageUsageFlags usage,
 	VkMemoryPropertyFlags properties)
 	: _pDevice(device)
+	, _pool(pool)
 	// _physical(physical)
 	//, _device(device)
 	, _image(VK_NULL_HANDLE)
@@ -96,6 +101,96 @@ JImage::~JImage()
 {
 	vkDestroyImage(_pDevice->device(), _image, nullptr);
 	vkFreeMemory(_pDevice->device(), _memory, nullptr);
+}
+
+
+// could modify to take an argument for making oldLayout= VK_IMAGE_LAYOUT_UNDEFINED, when we don't care about 
+// the existing contents
+void JImage::transitionImageLayout(VkFormat format, VkImageLayout newLayout)
+{
+	JCommandBuffers::runWithSingleTimeCommandBuffer(_pool, [this, newLayout](JCommandBuffer buffer) {
+		VkImageLayout oldLayout = this->currentLayout();
+		
+		VkImageMemoryBarrier barrier{}; // used to synchronize access to resoures, equivalent buffer memory barrier
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.oldLayout = oldLayout;
+		barrier.newLayout = newLayout;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED; // not using barrier to transfer queue family ownership
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED; // not using barrier to transfer queue family ownership
+		// note these are not the default values!
+		barrier.image = this->image();
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
+
+		// TODO the following two lines
+		barrier.srcAccessMask = 0; // which ops must happen before barrier
+		barrier.dstAccessMask = 0; // which ops must happen after barrier
+		// we'll come back to this later
+
+		VkPipelineStageFlags sourceStage;
+		VkPipelineStageFlags destinationStage;
+
+		// compatibility table:
+		// https://www.khronos.org/registry/vulkan/specs/1.0/html/vkspec.html#synchronization-access-types-supported
+
+		if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+			barrier.srcAccessMask = 0; // not waiting on anything
+			barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; 
+
+			sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT; // at the beginning, nothing needs to happen before write
+			destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT; // required
+		}
+		else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+			barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		}
+
+		vkCmdPipelineBarrier(
+			buffer.buffer(),
+			0 /*TODO*/, 0 /*TODO*/, // pipeline stage in which ops occcur that happen before the barrier
+			// then pipeline stage in which ops will wait on the barrier
+			0, // 0 or VK_DEPENDENCY_BY_REGION_BIT, latter is a by region condition, meaning implementation
+			// can begin reading from the parts that were already written so far
+			0, nullptr, // arrays of memory barriers
+			0, nullptr, // arrays of buffer memory barriers
+			1, &barrier // arrays of image memory barriers
+			);
+		});
+	_layout = newLayout; 
+}
+
+void JImage::copyBufferToImage(const JBuffer* buffer)
+{
+	JCommandBuffers::runWithSingleTimeCommandBuffer(_pool, [this, buffer](JCommandBuffer cmdBuffer) {
+		VkBufferImageCopy region{};
+		region.bufferOffset = 0; // where pixels start
+		region.bufferRowLength = 0; // could have padding bytes between rows in image, 0 means tightly packed
+		region.bufferImageHeight = 0; // same for height
+
+		region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		region.imageSubresource.mipLevel = 0;
+		region.imageSubresource.baseArrayLayer = 0;
+		region.imageSubresource.layerCount = 1;
+
+		region.imageOffset = { 0,0,0 };
+		region.imageExtent = {
+			this->width,
+			this->height,
+			1
+		};
+
+		vkCmdCopyBufferToImage(
+			cmdBuffer.buffer(),
+			buffer->buffer(),
+			this->image(),
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, // layout the image is currently in, assume it's in good 
+			// transfer state
+			1, // region count
+			&region // region array
+		);
+		});
 }
 
 void JImage::initializeImage()
